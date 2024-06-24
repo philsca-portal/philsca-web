@@ -200,7 +200,7 @@ const Message = () => {
                                             </div>
                                             <div className="flex justify-end">
                                                 <div className={`w-fit p-2 rounded-2xl poppins-medium text-sm bg-[#e3f4eb] text-black`}>
-                                                    Good morning ma'am/sir!
+                                                    Good morning ma&apos;am/sir!
                                                 </div>
                                             </div>
                                         </ScrollArea>
