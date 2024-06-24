@@ -111,7 +111,7 @@ const Dashboard = () => {
                                 :
                                 <div className="flex flex-row  gap-1">
                                     <div className="text-sm font-bold text-gray-500 poppins-bold">
-                                        Today's Total Requests:
+                                        Today&apos;s Total Requests:
                                     </div>
                                     <div className="text-sm poppins-extrabold">
                                         12
