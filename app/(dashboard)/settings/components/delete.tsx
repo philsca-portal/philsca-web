@@ -49,7 +49,7 @@ const DeleteSection: React.FC<DeleteProps> = ({
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            confirmation: "",
+            confirmation: "DELETE ACCOUNT",
         },
     });
 
