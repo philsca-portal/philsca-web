@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Row } from "@tanstack/react-table";
-import { Minus, MoreHorizontal, Plus } from "lucide-react";
+import { CalendarIcon, Minus, MoreHorizontal, Plus, ShieldQuestion } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
@@ -10,13 +10,18 @@ import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import toast from "react-hot-toast";
-import { useState } from "react";
-import axios from "axios";
+import { useEffect, useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTheme } from "next-themes";
 import { Request } from "./column";
+import { get, ref, set, update } from "firebase/database";
+import { database } from "@/firebase";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { Calendar } from "@/components/ui/calendar";
+import { v4 as uuidv4 } from "uuid";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 interface RowActionProps {
     row: Row<Request>
@@ -24,13 +29,8 @@ interface RowActionProps {
 
 
 const formSchema = z.object({
-    reference_number: z.string().min(1, "Reference number is required"),
-    student_number: z.string().min(1, "Student number is required"),
-    name: z.string().min(1, "Name is required"),
-    document_type: z.string().min(1, "Document type is required"),
     status: z.string().min(1, "Status is required"),
-    request_date: z.string().min(1, "Request date is required").regex(/^\d{4}-\d{2}-\d{2}$/, "Request date must be in YYYY-MM-DD format"),
-    estimate_completion: z.string().min(1, "Estimated completion date is required").regex(/^\d{4}-\d{2}-\d{2}$/, "Estimated completion date must be in YYYY-MM-DD format")
+    estimate_completion: z.date().optional()
 });
 
 const RowAction: React.FC<RowActionProps> = ({
@@ -42,13 +42,8 @@ const RowAction: React.FC<RowActionProps> = ({
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
-            reference_number: row.original.reference_number,
-            student_number: row.original.student_number,
-            name: row.original.name,
-            document_type: row.original.document_type,
             status: row.original.status,
-            request_date: row.original.request_date,
-            estimate_completion: row.original.estimate_completion
+            estimate_completion: row.original.status !== "Completed" || "Claimed" ? row.original.estimate_completion ? row.original.estimate_completion : undefined : undefined
         },
     });
 
@@ -65,18 +60,147 @@ const RowAction: React.FC<RowActionProps> = ({
         }
     }
 
+    async function sendPushNotification(expoPushToken: string, title: string, body: string, route: string) {
+        const message = {
+            to: expoPushToken,
+            sound: 'default',
+            title: `${title}`,
+            body: `${body}`,
+            data: { route: `${route}` },
+        };
+        console.log(process.env.NEXT_PUBLIC_ACCESS_TOKEN);
+        await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Accept-encoding': 'gzip, deflate',
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.NEXT_PUBLIC_ACCESS_TOKEN}`
+            },
+            mode: 'no-cors',
+            body: JSON.stringify(message),
+        });
+    }
+
     const onSubmit = async (values: z.infer<typeof formSchema>) => {
         setLoading(true);
         try {
-            const id = row.original.reference_number;
-            const response = await axios.post('/api/editInventory', {
-                values,
-                id
-            });
+            if (values.estimate_completion !== undefined && values.status !== "Completed" && values.status !== "Claimed") {
+                await update(ref(database, `requests/${row.original.userId}/${row.original.id}`), {
+                    estimate_completion: values.estimate_completion,
+                    updatedAt: Date.now()
+                });
 
-            if (response.data.status === 200) {
-                toast.success("Data changed.");
+                await set(ref(database, `requests/${row.original.userId}/${row.original.id}/requestsLogs/${uuidv4()}`), {
+                    action: `The estimated completion date is now set for your request(${row.original.document_type}) to ${format(values.estimate_completion, "	PPPppp")}.`,
+                    timestamp: Date.now()
+                });
+
+                await set(ref(database, `user/${row.original.userId}/notification/${uuidv4()}`), {
+                    title: `Update on your request(${row.original.document_type})`,
+                    message: `The estimated completion date is now set for your request(${row.original.document_type}) to ${format(values.estimate_completion, "	PPPppp")}.`,
+                    timestamp: Date.now(),
+                    read: false,
+                    route: 'myrequests'
+                });
+
+                const userRef = ref(database, `user/${row.original.userId}`);
+
+                const snap = await get(userRef);
+                const userData = snap.val();
+                const expoData = userData.expoPushToken;
+
+                if (expoData) {
+                    sendPushNotification(expoData, `Update on your request(${row.original.document_type})`, `The estimated completion date is now set for your request(${row.original.document_type}) to ${format(values.estimate_completion, "	PPPppp")}.`, 'myrequests');
+                }
+            } else if (values.status === 'Completed') {
+                await update(ref(database, `requests/${row.original.userId}/${row.original.id}`), {
+                    status: values.status,
+                    updatedAt: Date.now()
+                });
+
+                await set(ref(database, `requests/${row.original.userId}/${row.original.id}/requestsLogs/${uuidv4()}`), {
+                    action: `your request is now ${values.status} you can now get your ${row.original.document_type} within our office hours`,
+                    timestamp: Date.now()
+                });
+
+                await set(ref(database, `user/${row.original.userId}/notification/${uuidv4()}`), {
+                    title: `Update on your request(${row.original.document_type})`,
+                    message: `your request is now ${values.status} you can now get your ${row.original.document_type} within our office hours`,
+                    timestamp: Date.now(),
+                    read: false,
+                    route: 'myrequests'
+                });
+
+                const userRef = ref(database, `user/${row.original.userId}`);
+
+                const snap = await get(userRef);
+                const userData = snap.val();
+                const expoData = userData.expoPushToken;
+
+                if (expoData) {
+                    sendPushNotification(expoData, `Update on your request(${row.original.document_type})`, `your request is now ${values.status} you can now get your ${row.original.document_type} within our office hours`, 'myrequests');
+                }
+            } else if (values.status === 'Claimed') {
+                await update(ref(database, `requests/${row.original.userId}/${row.original.id}`), {
+                    status: values.status,
+                    updatedAt: Date.now()
+                });
+
+                await set(ref(database, `requests/${row.original.userId}/${row.original.id}/requestsLogs/${uuidv4()}`), {
+                    action: `you have claimed your ${row.original.document_type}. Thank you for your patience and cooperation`,
+                    timestamp: Date.now()
+                });
+
+                await set(ref(database, `user/${row.original.userId}/notification/${uuidv4()}`), {
+                    title: `Update on your request(${row.original.document_type})`,
+                    message: `you have claimed your ${row.original.document_type}. Thank you for your patience and cooperation`,
+                    timestamp: Date.now(),
+                    read: false,
+                    route: 'myrequests'
+                });
+
+                const userRef = ref(database, `user/${row.original.userId}`);
+
+                const snap = await get(userRef);
+                const userData = snap.val();
+                const expoData = userData.expoPushToken;
+
+                if (expoData) {
+                    sendPushNotification(expoData, `Update on your request(${row.original.document_type})`, `you have claimed your ${row.original.document_type}. Thank you for your patience and cooperation`, 'myrequests');
+                }
+            } else {
+                await update(ref(database, `requests/${row.original.userId}/${row.original.id}`), {
+                    status: values.status,
+                    updatedAt: Date.now()
+                });
+
+                await set(ref(database, `requests/${row.original.userId}/${row.original.id}/requestsLogs/${uuidv4()}`), {
+                    action: `your request is now ${values.status}`,
+                    timestamp: Date.now()
+                });
+
+                await set(ref(database, `user/${row.original.userId}/notification/${uuidv4()}`), {
+                    title: `Update on your request(${row.original.document_type})`,
+                    message: `your request is now ${values.status}`,
+                    timestamp: Date.now(),
+                    read: false,
+                    route: 'myrequests'
+                });
+
+                const userRef = ref(database, `user/${row.original.userId}`);
+
+                const snap = await get(userRef);
+                const userData = snap.val();
+                const expoData = userData.expoPushToken;
+
+                if (expoData) {
+                    sendPushNotification(expoData, `Update on your request(${row.original.document_type})`, `your request is now ${values.status}`, 'myrequests');
+                }
             }
+
+            toast.success('Request data changed.');
+
         } catch (error) {
             console.log(error);
             toast.error('Someting went wrong.');
@@ -86,6 +210,15 @@ const RowAction: React.FC<RowActionProps> = ({
         }
     }
 
+    const statusOptions: string[] = [
+        "Submitted",
+        "Under Review",
+        "Approved",
+        "In Progress",
+        "Completed",
+        "Cancelled",
+        "Claimed"
+    ];
 
     return (
         <Popover>
@@ -107,7 +240,7 @@ const RowAction: React.FC<RowActionProps> = ({
                         </Button>
                     </DialogTrigger>
                     <DialogContent className="w-fit">
-                        <DialogTitle>Update Inventory</DialogTitle>
+                        <DialogTitle>Update Request</DialogTitle>
                         <DialogDescription>
                             This action cannot be undone. This will permanently change your data from the server.
                         </DialogDescription>
@@ -116,38 +249,64 @@ const RowAction: React.FC<RowActionProps> = ({
                                 <FormField
                                     control={form.control}
                                     name="status"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Status</FormLabel>
-                                            <FormControl>
-                                                <Select value={field.value} defaultValue={field.value} onValueChange={field.onChange}>
-                                                    <SelectTrigger>
-                                                        <SelectValue defaultValue={field.value} placeholder="Select a status" />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="Available">Available</SelectItem>
-                                                        <SelectItem value="Low Stock">Low Stock</SelectItem>
-                                                        <SelectItem value="Out of Stock">Out of Stock</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
+                                    render={({ field }) => {
+
+                                        const disabledOptions: string[] = statusOptions.filter(status => {
+                                            return statusOptions.indexOf(status) <= statusOptions.indexOf(row.original.status);
+                                        });
+
+                                        return (
+                                            <FormItem>
+                                                <FormLabel>Status</FormLabel>
+                                                <FormControl>
+                                                    <Select value={field.value} defaultValue={field.value} onValueChange={field.onChange}>
+                                                        <SelectTrigger>
+                                                            <SelectValue defaultValue={field.value} placeholder="Select a status" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {statusOptions.map(status => (
+                                                                <SelectItem
+                                                                    key={status}
+                                                                    value={status}
+                                                                    disabled={disabledOptions.includes(status)}
+                                                                >
+                                                                    {status}
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </FormControl>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )
+                                    }
+                                    }
                                 />
-                                <FormField
-                                    control={form.control}
-                                    name="estimate_completion"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Estimate Completion</FormLabel>
-                                            <FormControl>
-                                                <Input placeholder="Enter Location" {...field} />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
+                                {form.watch("status") !== "Claimed" && form.watch("status") !== "Completed" && (
+                                    <FormField
+                                        control={form.control}
+                                        name="estimate_completion"
+                                        render={({ field }) => (
+                                            <FormItem className="flex flex-col">
+                                                <FormLabel className="flex flex-row gap-1">
+                                                    <div>
+                                                        Estimate Completion
+                                                    </div>
+                                                    <Popover>
+                                                        <PopoverTrigger>
+                                                            <ShieldQuestion className="h-4 w-4" />
+                                                        </PopoverTrigger>
+                                                        <PopoverContent className="text-sm text-gray-500 flex flex-row w-fit">
+                                                            In order to have <div className="text-black font-bold ml-1 italic">estimate_completion</div>, status must be in <div className="text-black font-bold ml-1 italic">&apos;&apos;In Progress&apos;&apos;.</div>
+                                                        </PopoverContent>
+                                                    </Popover>
+                                                </FormLabel>
+                                                <DateTimePicker hourCycle={12} value={field.value} onChange={field.onChange} row={row} />
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                )}
                                 <Button disabled={loading} className="w-full" type="submit">
                                     {
                                         loading ? (

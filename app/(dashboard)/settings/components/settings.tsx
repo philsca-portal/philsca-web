@@ -45,22 +45,6 @@ const Settings: React.FC<SettingsProps> = ({
                     <ModeToggle />
                 </div>
                 <Collapsible session={session} />
-                <div className="flex flex-col gap-2 w-full md:w-4/6">
-                    <div className="text-lg poppins-bold">
-                        Danger
-                    </div>
-                    <div className="flex justify-between">
-                        <div className="px-8">
-                            <div className="poppins-bold text-xs">
-                                DELETE ACCOUNT
-                            </div>
-                            <div className="text-xs poppins-bold text-gray-500">
-                                Delete your account and all its associated data
-                            </div>
-                        </div>
-                        <Delete session={session} />
-                    </div>
-                </div>
             </div>
         </div>
     )

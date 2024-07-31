@@ -38,12 +38,13 @@ const Request = () => {
         const fetchData = (snapshot: any) => {
             const requestData = snapshot.val();
             if (requestData) {
-                const requestArray: Req[] = Object.keys(requestData).map(key => ({
-                    id: key,
-                    ...requestData[key]
-                }));
-
-                setData(requestArray);
+                const childrenArray: Req[] = Object.keys(requestData).flatMap(parentId =>
+                    Object.keys(requestData[parentId]).map(childId => ({
+                        id: childId,
+                        ...requestData[parentId][childId],
+                    }))
+                );
+                setData(childrenArray);
             }
         };
 

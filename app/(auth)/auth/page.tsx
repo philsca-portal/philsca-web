@@ -7,14 +7,11 @@ import 'swiper/css';
 import 'swiper/css/autoplay';
 import 'swiper/css/controller';
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import authPic1 from "@/public/assets/images/authPic1.jpg";
 import authPic2 from "@/public/assets/images/authPic2.jpg"
 import authPic3 from "@/public/assets/images/authPic3.jpg"
 import philscaIcon from "@/public/assets/images/philsca_icon.png";
 import Image from "next/image";
-import { Badge } from "@/components/ui/badge";
-import { CircleUserRound, LogIn } from "lucide-react";
 
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -102,9 +99,13 @@ export default function Page() {
                 const OS = getOSName();
                 const Browser = getBrowserName();
 
+                const ipResponse = await axios.get('https://api.ipify.org?format=json');
+                const ipAddress = ipResponse.data.ip;
+
                 await set(ref(database, `admin/${response.data.id}/history/${generateShortUUID()}`), {
                     osUsed: OS,
                     browserUsed: Browser,
+                    ipAddress: ipAddress,
                     createdAt: Date.now()
                 });
 

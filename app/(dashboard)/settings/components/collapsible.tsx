@@ -17,6 +17,7 @@ interface CollapsibleProps {
 type History = {
     osUsed: string;
     browserUsed: string;
+    ipAddress: string;
     createdAt: number
 }
 
@@ -70,6 +71,9 @@ const Collapsible: React.FC<CollapsibleProps> = ({
             </div>
             <div className="flex justify-between rounded-md border px-4 py-3 font-mono text-sm">
                 <div>
+                    <div>
+                        Ip-Address: {data[0]?.ipAddress}
+                    </div>
                     <div>
                         OS: {data[0]?.osUsed}
                     </div>
